@@ -11,10 +11,26 @@ struct Shape {
     color: Color,
 }
 
+impl Shape {
+    fn collides_with(&self, other: &Self) -> bool {
+        self.rect().overlaps(&other.rect())
+    }
+
+    fn rect(&self) -> Rect {
+        Rect {
+            x: self.x - self.size / 2.0,
+            y: self.y - self.size / 2.0,
+            w: self.size,
+            h: self.size,
+        }
+    }
+}
+
 #[macroquad::main("Arcade!")]
 async fn main() {
     rand::srand(miniquad::date::now() as u64);
 
+    let mut gameover = false;
     let mut x = screen_width() / 2.0;
     let mut y = screen_height() / 2.0;
     const MOVEMENT_SPEED: f32 = 400.0;
@@ -35,7 +51,7 @@ async fn main() {
         let delta_time = get_frame_time();
         let movement = MOVEMENT_SPEED * delta_time;
 
-         if rand::gen_range(0, 99) >= 95 {
+        if rand::gen_range(0, 99) >= 95 {
             let size = rand::gen_range(16.0, 64.0);
             squares.push(Shape {
                 size,
@@ -57,21 +73,47 @@ async fn main() {
                 square.color,
             );
         }
-        for square in &mut squares {
-            square.y += square.speed * delta_time;
+
+        if !gameover {
+            for square in &mut squares {
+                square.y += square.speed * delta_time;
+            }
+
+            if is_key_down(KeyCode::Right) {
+                x += movement;
+            }
+            if is_key_down(KeyCode::Left) {
+                x -= movement;
+            }
+            if is_key_down(KeyCode::Down) {
+                y += movement;
+            }
+            if is_key_down(KeyCode::Up) {
+                y -= movement;
+            }
         }
 
-        if is_key_down(KeyCode::Right) {
-            x += movement;
+        if squares.iter().any(|square| circle.collides_with(square)) {
+            gameover = true;
         }
-        if is_key_down(KeyCode::Left) {
-            x -= movement;
+
+        if gameover {
+            let text = "Game Over!";
+            let text_dimensions = measure_text(text, None, 50, 1.0);
+            draw_text(
+                text,
+                screen_width() / 2.0 - text_dimensions.width / 2.0,
+                screen_height() / 2.0,
+                50.0,
+                RED,
+            );
         }
-        if is_key_down(KeyCode::Down) {
-            y += movement;
-        }
-        if is_key_down(KeyCode::Up) {
-            y -= movement;
+
+        if gameover && is_key_pressed(KeyCode::Space) {
+            squares.clear();
+            x = screen_width() / 2.0;
+            y = screen_height() / 2.0;
+            gameover = false;
         }
 
         circle.x = x.min(screen_width()-BALL_SIZE).max(BALL_SIZE);
