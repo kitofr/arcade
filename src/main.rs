@@ -31,8 +31,6 @@ async fn main() {
     rand::srand(miniquad::date::now() as u64);
 
     let mut gameover = false;
-    let mut x = screen_width() / 2.0;
-    let mut y = screen_height() / 2.0;
     const MOVEMENT_SPEED: f32 = 400.0;
     const BALL_SIZE: f32 = 16.0;
 
@@ -80,16 +78,16 @@ async fn main() {
             }
 
             if is_key_down(KeyCode::Right) {
-                x += movement;
+                circle.x += movement;
             }
             if is_key_down(KeyCode::Left) {
-                x -= movement;
+                circle.x -= movement;
             }
             if is_key_down(KeyCode::Down) {
-                y += movement;
+                circle.y += movement;
             }
             if is_key_down(KeyCode::Up) {
-                y -= movement;
+                circle.y -= movement;
             }
         }
 
@@ -111,13 +109,13 @@ async fn main() {
 
         if gameover && is_key_pressed(KeyCode::Space) {
             squares.clear();
-            x = screen_width() / 2.0;
-            y = screen_height() / 2.0;
+            circle.x = screen_width() / 2.0;
+            circle.y = screen_height() / 2.0;
             gameover = false;
         }
 
-        circle.x = x.min(screen_width()-BALL_SIZE).max(BALL_SIZE);
-        circle.y = y.min(screen_height()-BALL_SIZE).max(BALL_SIZE);
+        circle.x = circle.x.min(screen_width()-BALL_SIZE).max(BALL_SIZE);
+        circle.y = circle.y.min(screen_height()-BALL_SIZE).max(BALL_SIZE);
 
         draw_circle(circle.x, circle.y, 16.0, circle.color);
 
