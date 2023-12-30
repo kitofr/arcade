@@ -1,7 +1,6 @@
-use std::ops::Deref;
-
 use macroquad::prelude::*;
 use macroquad::rand::ChooseRandom;
+use std::fs;
 
 struct Shape {
     size: f32,
@@ -30,6 +29,11 @@ impl Shape {
 #[macroquad::main("Arcade!")]
 async fn main() {
     rand::srand(miniquad::date::now() as u64);
+
+    let mut score: u32 = 0;
+    let mut high_score: u32 = fs::read_to_string("highscore.dat")
+        .map_or(Ok(0), |i| i.parse::<u32>())
+        .unwrap_or(0);
 
     let mut gameover = false;
     const MOVEMENT_SPEED: f32 = 400.0;
@@ -63,7 +67,6 @@ async fn main() {
                 collided: false,
             });
         }
-
 
         if !gameover {
             for square in &mut squares {
@@ -115,6 +118,9 @@ async fn main() {
         }
 
         if squares.iter().any(|square| circle.collides_with(square)) {
+            if score == high_score {
+                fs::write("highscore.dat", high_score.to_string()).ok();
+            }
             gameover = true;
         }
         for square in squares.iter_mut() {
@@ -122,6 +128,8 @@ async fn main() {
                 if bullet.collides_with(square) {
                     bullet.collided = true;
                     square.collided = true;
+                    score += square.size.round() as u32;
+                    high_score = high_score.max(score);
                 }
             }
         }
@@ -143,6 +151,7 @@ async fn main() {
             bullets.clear();
             circle.x = screen_width() / 2.0;
             circle.y = screen_height() / 2.0;
+            score = 0;
             gameover = false;
         }
 
@@ -154,6 +163,22 @@ async fn main() {
             draw_circle(bullet.x, bullet.y, bullet.size / 2.0, bullet.color);
         }
 
+        draw_text(
+            format!("Poäng: {}", score).as_str(),
+            10.0,
+            35.0,
+            25.0,
+            WHITE,
+        );
+        let highscore_text = format!("High score: {}", high_score);
+        let text_dimensions = measure_text(highscore_text.as_str(), None, 25, 1.0);
+        draw_text(
+            highscore_text.as_str(),
+            screen_width() - text_dimensions.width - 10.0,
+            35.0,
+            25.0,
+            WHITE,
+        );
         next_frame().await
     }
 }
