@@ -9,6 +9,7 @@ struct Shape {
     x: f32,
     y: f32,
     color: Color,
+    collided: bool,
 }
 
 impl Shape {
@@ -34,13 +35,15 @@ async fn main() {
     const MOVEMENT_SPEED: f32 = 400.0;
     const BALL_SIZE: f32 = 16.0;
 
-    let mut squares : Vec<Shape> = vec![];
+    let mut bullets: Vec<Shape> = vec![];
+    let mut squares: Vec<Shape> = vec![];
     let mut circle = Shape {
         size: 32.0,
         speed: MOVEMENT_SPEED,
         x: screen_width() / 2.0,
         y: screen_height() / 2.0,
         color: YELLOW,
+        collided: false,
     };
 
     loop {
@@ -57,20 +60,10 @@ async fn main() {
                 x: rand::gen_range(size / 2.0, screen_width() - size / 2.0),
                 y: -size,
                 color: vec![GREEN, RED, BLUE, GRAY].choose().unwrap_or(&GREEN).to_owned(),
+                collided: false,
             });
         }
 
-        squares.retain(|square| square.y < screen_width() + square.size);
-
-        for square in &squares {
-            draw_rectangle(
-                square.x - square.size / 2.0,
-                square.y - square.size / 2.0,
-                square.size,
-                square.size,
-                square.color,
-            );
-        }
 
         if !gameover {
             for square in &mut squares {
@@ -89,10 +82,48 @@ async fn main() {
             if is_key_down(KeyCode::Up) {
                 circle.y -= movement;
             }
+
+            if is_key_pressed(KeyCode::Space) {
+                bullets.push(Shape {
+                    x: circle.x,
+                    y: circle.y,
+                    speed: circle.speed * 2.0,
+                    size: 5.0,
+                    color: RED,
+                    collided: false,
+                });
+            }
+
+            for bullet in &mut bullets {
+                bullet.y -= bullet.speed * delta_time;
+            }
+        }
+
+        squares.retain(|square| square.y < screen_width() + square.size);
+        bullets.retain(|bullet| bullet.y > 0.0 - bullet.size / 2.0);
+        squares.retain(|square| !square.collided);
+        bullets.retain(|bullet| !bullet.collided);
+
+        for square in &squares {
+            draw_rectangle(
+                square.x - square.size / 2.0,
+                square.y - square.size / 2.0,
+                square.size,
+                square.size,
+                square.color,
+            );
         }
 
         if squares.iter().any(|square| circle.collides_with(square)) {
             gameover = true;
+        }
+        for square in squares.iter_mut() {
+            for bullet in bullets.iter_mut() {
+                if bullet.collides_with(square) {
+                    bullet.collided = true;
+                    square.collided = true;
+                }
+            }
         }
 
         if gameover {
@@ -109,6 +140,7 @@ async fn main() {
 
         if gameover && is_key_pressed(KeyCode::Space) {
             squares.clear();
+            bullets.clear();
             circle.x = screen_width() / 2.0;
             circle.y = screen_height() / 2.0;
             gameover = false;
@@ -118,6 +150,9 @@ async fn main() {
         circle.y = circle.y.min(screen_height()-BALL_SIZE).max(BALL_SIZE);
 
         draw_circle(circle.x, circle.y, 16.0, circle.color);
+        for bullet in &bullets {
+            draw_circle(bullet.x, bullet.y, bullet.size / 2.0, bullet.color);
+        }
 
         next_frame().await
     }
