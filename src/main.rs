@@ -1,5 +1,6 @@
 use macroquad::prelude::*;
 use macroquad::rand::ChooseRandom;
+use macroquad_particles::{self as particles, ColorCurve, Emitter, EmitterConfig};
 use std::fs;
 
 const FRAGMENT_SHADER: &str = include_str!("starfield-shader.glsl");
@@ -53,11 +54,34 @@ impl Shape {
 }
 
 
+fn particle_explosion() -> particles::EmitterConfig {
+    particles::EmitterConfig {
+        local_coords: false,
+        one_shot: true,
+        emitting: true,
+        lifetime: 0.6,
+        lifetime_randomness: 0.3,
+        explosiveness: 0.65,
+        initial_direction_spread: 2.0 * std::f32::consts::PI,
+        initial_velocity: 300.0,
+        initial_velocity_randomness: 0.8,
+        size: 3.0,
+        size_randomness: 0.3,
+        colors_curve: ColorCurve {
+            start: RED,
+            mid: ORANGE,
+            end: RED,
+        },
+        ..Default::default()
+    }
+}
+
 
 #[macroquad::main("Arcade!")]
 async fn main() {
     rand::srand(miniquad::date::now() as u64);
 
+    let mut explosions: Vec<(Emitter, Vec2)> = vec![];
     let mut game_state = GameState::MainMenu;
     let mut score: u32 = 0;
     let mut high_score: u32 = fs::read_to_string("highscore.dat")
@@ -124,6 +148,7 @@ async fn main() {
                 if is_key_pressed(KeyCode::Space) {
                     squares.clear();
                     bullets.clear();
+                    explosions.clear();
                     circle.x = screen_width() / 2.0;
                     circle.y = screen_height() / 2.0;
                     score = 0;
@@ -196,6 +221,7 @@ async fn main() {
                 bullets.retain(|bullet| bullet.y > 0.0 - bullet.size / 2.0);
                 squares.retain(|square| !square.collided);
                 bullets.retain(|bullet| !bullet.collided);
+                explosions.retain(|(explosion, _)| explosion.config.emitting);
 
                 for square in &squares {
                     draw_rectangle(
@@ -220,30 +246,16 @@ async fn main() {
                             square.collided = true;
                             score += square.size.round() as u32;
                             high_score = high_score.max(score);
+                            explosions.push((
+                                Emitter::new(EmitterConfig {
+                                    amount: square.size.round()as u32 * 2,
+                                    ..particle_explosion()
+                                }),
+                                vec2(square.x, square.y),
+                            ));
                         }
                     }
                 }
-
-                //if gameover {
-                //    let text = "Game Over!";
-                //    let text_dimensions = measure_text(text, None, 50, 1.0);
-                //    draw_text(
-                //        text,
-                //        screen_width() / 2.0 - text_dimensions.width / 2.0,
-                //        screen_height() / 2.0,
-                //        50.0,
-                //        RED,
-                //    );
-                //}
-
-                //if gameover && is_key_pressed(KeyCode::Space) {
-                //    squares.clear();
-                //    bullets.clear();
-                //    circle.x = screen_width() / 2.0;
-                //    circle.y = screen_height() / 2.0;
-                //    score = 0;
-                //    gameover = false;
-                //}
 
                 circle.x = circle.x.min(screen_width()-BALL_SIZE).max(BALL_SIZE);
                 circle.y = circle.y.min(screen_height()-BALL_SIZE).max(BALL_SIZE);
@@ -251,6 +263,9 @@ async fn main() {
                 draw_circle(circle.x, circle.y, 16.0, circle.color);
                 for bullet in &bullets {
                     draw_circle(bullet.x, bullet.y, bullet.size / 2.0, bullet.color);
+                }
+                for (explosion, coords) in explosions.iter_mut() {
+                    explosion.draw(*coords);
                 }
 
                 draw_text(
