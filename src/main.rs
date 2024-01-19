@@ -1,7 +1,7 @@
-use macroquad::prelude::*;
-use macroquad::rand::ChooseRandom;
 use macroquad::experimental::animation::{AnimatedSprite, Animation};
+use macroquad::prelude::*;
 use macroquad_particles::{self as particles, ColorCurve, Emitter, EmitterConfig};
+
 use std::fs;
 
 const FRAGMENT_SHADER: &str = include_str!("starfield-shader.glsl");
@@ -22,22 +22,13 @@ void main() {
 }
 ";
 
-enum GameState {
-    MainMenu,
-    Playing,
-    Paused,
-    GameOver,
-}
-
 struct Shape {
     size: f32,
     speed: f32,
     x: f32,
     y: f32,
-    color: Color,
     collided: bool,
 }
-
 
 impl Shape {
     fn collides_with(&self, other: &Self) -> bool {
@@ -54,6 +45,12 @@ impl Shape {
     }
 }
 
+enum GameState {
+    MainMenu,
+    Playing,
+    Paused,
+    GameOver,
+}
 
 fn particle_explosion() -> particles::EmitterConfig {
     particles::EmitterConfig {
@@ -77,10 +74,45 @@ fn particle_explosion() -> particles::EmitterConfig {
     }
 }
 
-
 #[macroquad::main("Arcade!")]
 async fn main() {
+    const MOVEMENT_SPEED: f32 = 200.0;
+
     rand::srand(miniquad::date::now() as u64);
+    let mut squares = vec![];
+    let mut bullets: Vec<Shape> = vec![];
+    let mut circle = Shape {
+        size: 32.0,
+        speed: MOVEMENT_SPEED,
+        x: screen_width() / 2.0,
+        y: screen_height() / 2.0,
+        collided: false,
+    };
+    let mut score: u32 = 0;
+    let mut high_score: u32 = fs::read_to_string("highscore.dat")
+        .map_or(Ok(0), |i| i.parse::<u32>())
+        .unwrap_or(0);
+    let mut game_state = GameState::MainMenu;
+
+    let mut direction_modifier: f32 = 0.0;
+    let render_target = render_target(320, 150);
+    render_target.texture.set_filter(FilterMode::Nearest);
+    let material = load_material(
+        ShaderSource::Glsl {
+            vertex: VERTEX_SHADER,
+            fragment: FRAGMENT_SHADER,
+        },
+        MaterialParams {
+            uniforms: vec![
+                ("iResolution".to_owned(), UniformType::Float2),
+                ("direction_modifier".to_owned(), UniformType::Float1),
+            ],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let mut explosions: Vec<(Emitter, Vec2)> = vec![];
 
     set_pc_assets_folder("assets");
     let ship_texture: Texture2D = load_texture("ship.png").await.expect("Couldn't load file");
@@ -116,7 +148,6 @@ async fn main() {
         ],
         true,
     );
-
     let mut bullet_sprite = AnimatedSprite::new(
         16,
         16,
@@ -138,46 +169,6 @@ async fn main() {
     );
     bullet_sprite.set_animation(1);
 
-    let mut explosions: Vec<(Emitter, Vec2)> = vec![];
-    let mut game_state = GameState::MainMenu;
-    let mut score: u32 = 0;
-    let mut high_score: u32 = fs::read_to_string("highscore.dat")
-        .map_or(Ok(0), |i| i.parse::<u32>())
-        .unwrap_or(0);
-
-    const MOVEMENT_SPEED: f32 = 400.0;
-    const BALL_SIZE: f32 = 16.0;
-
-    let mut bullets: Vec<Shape> = vec![];
-    let mut squares: Vec<Shape> = vec![];
-    let mut circle = Shape {
-        size: 32.0,
-        speed: MOVEMENT_SPEED,
-        x: screen_width() / 2.0,
-        y: screen_height() / 2.0,
-        color: YELLOW,
-        collided: false,
-    };
-
-    let mut direction_modifier: f32 = 0.0;
-    let render_target = render_target(320, 150);
-    render_target.texture.set_filter(FilterMode::Nearest);
-    let material = load_material(
-        ShaderSource::Glsl {
-            vertex: VERTEX_SHADER,
-            fragment: FRAGMENT_SHADER,
-        },
-        MaterialParams {
-            uniforms: vec![
-                ("iResolution".to_owned(), UniformType::Float2),
-                ("direction_modifier".to_owned(), UniformType::Float1),
-            ],
-            ..Default::default()
-        },
-    )
-    .unwrap();
-
-
     loop {
         clear_background(BLACK);
 
@@ -196,7 +187,6 @@ async fn main() {
         );
         gl_use_default_material();
 
-
         match game_state {
             GameState::MainMenu => {
                 if is_key_pressed(KeyCode::Escape) {
@@ -211,7 +201,7 @@ async fn main() {
                     score = 0;
                     game_state = GameState::Playing;
                 }
-                let text = "[Arcade] - Tryck på space";
+                let text = "Tryck på mellanslag";
                 let text_dimensions = measure_text(text, None, 50, 1.0);
                 draw_text(
                     text,
@@ -223,49 +213,29 @@ async fn main() {
             }
             GameState::Playing => {
                 let delta_time = get_frame_time();
-                let movement = MOVEMENT_SPEED * delta_time;
-
-                if rand::gen_range(0, 99) >= 95 {
-                    let size = rand::gen_range(16.0, 64.0);
-                    squares.push(Shape {
-                        size,
-                        speed: rand::gen_range(50.0, 150.0),
-                        x: rand::gen_range(size / 2.0, screen_width() - size / 2.0),
-                        y: -size,
-                        color: vec![GREEN, RED, BLUE, GRAY].choose().unwrap_or(&GREEN).to_owned(),
-                        collided: false,
-                    });
-                }
-
-                for square in &mut squares {
-                    square.y += square.speed * delta_time;
-                }
-
                 ship_sprite.set_animation(0);
                 if is_key_down(KeyCode::Right) {
-                    circle.x += movement;
+                    circle.x += MOVEMENT_SPEED * delta_time;
                     direction_modifier += 0.05 * delta_time;
                     ship_sprite.set_animation(2);
                 }
                 if is_key_down(KeyCode::Left) {
-                    circle.x -= movement;
+                    circle.x -= MOVEMENT_SPEED * delta_time;
                     direction_modifier -= 0.05 * delta_time;
                     ship_sprite.set_animation(1);
                 }
                 if is_key_down(KeyCode::Down) {
-                    circle.y += movement;
+                    circle.y += MOVEMENT_SPEED * delta_time;
                 }
                 if is_key_down(KeyCode::Up) {
-                    circle.y -= movement;
+                    circle.y -= MOVEMENT_SPEED * delta_time;
                 }
-
                 if is_key_pressed(KeyCode::Space) {
                     bullets.push(Shape {
                         x: circle.x,
                         y: circle.y - 24.0,
                         speed: circle.speed * 2.0,
                         size: 32.0,
-                        color: RED,
                         collided: false,
                     });
                 }
@@ -273,33 +243,51 @@ async fn main() {
                     game_state = GameState::Paused;
                 }
 
+                // Clamp X and Y to be within the screen
+                circle.x = circle.x.min(screen_width()).max(0.0);
+                circle.y = circle.y.min(screen_height()).max(0.0);
+
+                // Generate a new square
+                if rand::gen_range(0, 99) >= 95 {
+                    let size = rand::gen_range(16.0, 64.0);
+                    squares.push(Shape {
+                        size,
+                        speed: rand::gen_range(50.0, 150.0),
+                        x: rand::gen_range(size / 2.0, screen_width() - size / 2.0),
+                        y: -size,
+                        collided: false,
+                    });
+                }
+
+                // Movement
+                for square in &mut squares {
+                    square.y += square.speed * delta_time;
+                }
                 for bullet in &mut bullets {
                     bullet.y -= bullet.speed * delta_time;
                 }
 
-                squares.retain(|square| square.y < screen_width() + square.size);
+                ship_sprite.update();
+                bullet_sprite.update();
+
+                // Remove shapes outside of screen
+                squares.retain(|square| square.y < screen_height() + square.size);
                 bullets.retain(|bullet| bullet.y > 0.0 - bullet.size / 2.0);
+
+                // Remove collided shapes
                 squares.retain(|square| !square.collided);
                 bullets.retain(|bullet| !bullet.collided);
+
+                // Remove old explosions
                 explosions.retain(|(explosion, _)| explosion.config.emitting);
 
-                for square in &squares {
-                    draw_rectangle(
-                        square.x - square.size / 2.0,
-                        square.y - square.size / 2.0,
-                        square.size,
-                        square.size,
-                        square.color,
-                    );
-                }
-
+                // Check for collisions
                 if squares.iter().any(|square| circle.collides_with(square)) {
                     if score == high_score {
                         fs::write("highscore.dat", high_score.to_string()).ok();
                     }
                     game_state = GameState::GameOver;
                 }
-
                 for square in squares.iter_mut() {
                     for bullet in bullets.iter_mut() {
                         if bullet.collides_with(square) {
@@ -309,7 +297,7 @@ async fn main() {
                             high_score = high_score.max(score);
                             explosions.push((
                                 Emitter::new(EmitterConfig {
-                                    amount: square.size.round()as u32 * 2,
+                                    amount: square.size.round() as u32 * 2,
                                     ..particle_explosion()
                                 }),
                                 vec2(square.x, square.y),
@@ -318,29 +306,9 @@ async fn main() {
                     }
                 }
 
-                ship_sprite.update();
-                bullet_sprite.update();
-
-                circle.x = circle.x.min(screen_width()-BALL_SIZE).max(BALL_SIZE);
-                circle.y = circle.y.min(screen_height()-BALL_SIZE).max(BALL_SIZE);
-
-                //draw_circle(circle.x, circle.y, 16.0, circle.color);
-                let ship_frame = ship_sprite.frame();
-                draw_texture_ex(
-                    &ship_texture,
-                    circle.x - ship_frame.dest_size.x,
-                    circle.y - ship_frame.dest_size.y,
-                    WHITE,
-                    DrawTextureParams {
-                        dest_size: Some(ship_frame.dest_size * 2.0),
-                        source: Some(ship_frame.source_rect),
-                        ..Default::default()
-                    },
-                );
-
+                // Draw everything
                 let bullet_frame = bullet_sprite.frame();
                 for bullet in &bullets {
-                    //draw_circle(bullet.x, bullet.y, bullet.size / 2.0, bullet.color);
                     draw_texture_ex(
                         &bullet_texture,
                         bullet.x - bullet.size / 2.0,
@@ -353,10 +321,30 @@ async fn main() {
                         },
                     );
                 }
+                let ship_frame = ship_sprite.frame();
+                draw_texture_ex(
+                    &ship_texture,
+                    circle.x - ship_frame.dest_size.x,
+                    circle.y - ship_frame.dest_size.y,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(ship_frame.dest_size * 2.0),
+                        source: Some(ship_frame.source_rect),
+                        ..Default::default()
+                    },
+                );
+                for square in &squares {
+                    draw_rectangle(
+                        square.x - square.size / 2.0,
+                        square.y - square.size / 2.0,
+                        square.size,
+                        square.size,
+                        GREEN,
+                    );
+                }
                 for (explosion, coords) in explosions.iter_mut() {
                     explosion.draw(*coords);
                 }
-
                 draw_text(
                     format!("Poäng: {}", score).as_str(),
                     10.0,
